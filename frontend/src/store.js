@@ -4,6 +4,8 @@ import { MB_TOK, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 import { ROSTER, TC_LIST } from "./demoData";
 
 const sb = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const isMissingTableError = (error) =>
+  !!error && (error.code === "PGRST205" || error.code === "42P01" || error.status === 404);
 
 export const useAppStore = create((set, get) => ({
   me: null,
@@ -70,7 +72,16 @@ export const useAppStore = create((set, get) => ({
     if (!sb) return;
     const { me } = get();
     const { data, error } = await sb.from("events").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        set({
+          events: [],
+          errorMessage: "Supabase에 `events` 테이블이 없습니다. README의 `supabase/schema.sql`을 먼저 실행해 주세요.",
+        });
+        return;
+      }
+      throw error;
+    }
     const events = (data || []).map((e) => ({
       ...e,
       feedbacks: e.feedbacks || [],
@@ -85,7 +96,16 @@ export const useAppStore = create((set, get) => ({
   loadTeams: async () => {
     if (!sb) return;
     const { data, error } = await sb.from("teams").select("*").order("name", { ascending: true });
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        set({
+          teams: [],
+          errorMessage: "Supabase에 `teams` 테이블이 없습니다. README의 `supabase/schema.sql`을 먼저 실행해 주세요.",
+        });
+        return;
+      }
+      throw error;
+    }
     set({ teams: data || [] });
   },
 
