@@ -55,8 +55,19 @@ function MapView() {
 
   useEffect(() => {
     if (!mapRef.current) return;
-    mapRef.current.setFog(isDark ? { color: "rgb(8,13,24)", "high-color": "rgb(18,38,85)", "space-color": "rgb(3,6,18)", "horizon-blend": 0.07 } : { color: "rgb(215,225,248)", "high-color": "rgb(180,205,255)", "space-color": "rgb(155,185,235)", "horizon-blend": 0.04 });
-  }, [isDark]);
+    const map = mapRef.current;
+    const fog = isDark
+      ? { color: "rgb(8,13,24)", "high-color": "rgb(18,38,85)", "space-color": "rgb(3,6,18)", "horizon-blend": 0.07 }
+      : { color: "rgb(215,225,248)", "high-color": "rgb(180,205,255)", "space-color": "rgb(155,185,235)", "horizon-blend": 0.04 };
+    const applyFog = () => map.setFog(fog);
+
+    if (map.isStyleLoaded()) {
+      applyFog();
+      return;
+    }
+
+    map.once("style.load", applyFog);
+  }, [isDark, mapStyle]);
 
   useEffect(() => {
     if (!mapRef.current) return;
