@@ -76,3 +76,27 @@ MICE 교과용 학생-교수 상호작용 플랫폼
 ## 📄 License
 
 This project is licensed under the MIT License.
+## 로컬 실행
+1) Supabase 프로젝트 생성 후, `supabase/schema.sql`를 SQL Editor에서 실행합니다.
+2) 루트 `.env`에 아래 값을 설정합니다. (`frontend/env.js`로 자동 생성되며 커밋되지 않음)
+   - `MB_TOK` (Mapbox public token, `pk...`)
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+3) 설치 및 실행:
+
+```bash
+npm install
+npm run dev
+```
+
+브라우저에서 `http://localhost:5173`을 여세요.
+
+## 배포 (Vercel/Netlify 등 정적 호스팅)
+- `MB_TOK`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`를 **배포 플랫폼 환경변수**로 등록하세요.
+- Build Command: `node scripts/generate-frontend-env.mjs && npm run build`
+- Output Directory: `dist`
+
+## Express가 필요한 경우
+- Mapbox `pk...` / Supabase `anon` 처럼 **원래 공개 전제인 값**만 쓰면 Express 없이 가능합니다.
+- Gemini 같은 **비밀 API 키**가 필요한 호출은 브라우저에 둘 수 없으니,
+  Supabase Edge Function(권장) 또는 Express 같은 서버 측에서 호출해야 합니다.

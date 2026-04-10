@@ -1,0 +1,27 @@
+{
+  "name": "eventscape",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/generate-frontend-env.mjs",
+    "dev": "vite --host",
+    "prebuild": "node scripts/generate-frontend-env.mjs",
+    "build": "vite build",
+    "prestart": "node scripts/generate-frontend-env.mjs",
+    "start": "vite preview --host"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "mapbox-gl": "^3.15.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "dotenv": "^16.6.1",
+    "vite": "^5.4.20"
+  }
+}
+
