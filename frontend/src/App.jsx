@@ -41,11 +41,15 @@ function MapView() {
     mapboxgl.accessToken = MB_TOK;
     mapRef.current = new mapboxgl.Map({ container: elRef.current, style: "mapbox://styles/mapbox/navigation-night-v1", center: [60, 20], zoom: 1.8, projection: "globe" });
     mapRef.current.on("click", (e) => {
-      if (!me || me.role === "professor") return;
-      setMapClickPoint({ lat: e.lngLat.lat.toFixed(5), lng: e.lngLat.lng.toFixed(5), team: me.team || "" });
+      const currentMe = useAppStore.getState().me;
+      if (!currentMe || currentMe.role === "professor") return;
+      setMapClickPoint({ lat: e.lngLat.lat.toFixed(5), lng: e.lngLat.lng.toFixed(5), team: currentMe.team || "" });
     });
-    return () => mapRef.current?.remove();
-  }, [me, setMapClickPoint]);
+    return () => {
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, [setMapClickPoint]);
 
   useEffect(() => {
     if (!mapRef.current) return;
