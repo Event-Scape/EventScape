@@ -4,6 +4,14 @@
 
 create extension if not exists "pgcrypto";
 
+create table if not exists public.roster (
+  uid text primary key,
+  name text not null,
+  role text not null default 'student',
+  team_name text references public.teams(name) on update cascade on delete set null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.teams (
   name text primary key,
   color text not null default '#3b7eff',
@@ -102,10 +110,18 @@ create table if not exists public.messages (
 create index if not exists messages_room_created_at_idx on public.messages(room, created_at);
 
 -- RLS (demo-friendly)
+alter table public.roster enable row level security;
 alter table public.teams enable row level security;
 alter table public.team_memberships enable row level security;
 alter table public.events enable row level security;
 alter table public.messages enable row level security;
+
+drop policy if exists "roster_read_all" on public.roster;
+create policy "roster_read_all" on public.roster for select using (true);
+drop policy if exists "roster_write_all" on public.roster;
+create policy "roster_write_all" on public.roster for insert with check (true);
+drop policy if exists "roster_update_all" on public.roster;
+create policy "roster_update_all" on public.roster for update using (true) with check (true);
 
 drop policy if exists "teams_read_all" on public.teams;
 create policy "teams_read_all" on public.teams for select using (true);

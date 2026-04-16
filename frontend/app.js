@@ -1,4 +1,4 @@
-/* global mapboxgl, API_BASE, MB_TOK, SUPABASE_URL, SUPABASE_ANON_KEY, supabase, ROSTER, DEMO_EVENTS, DEMO_TEAMS */
+/* global mapboxgl, API_BASE, MB_TOK, SUPABASE_URL, SUPABASE_ANON_KEY, supabase */
 
 /* ────────────────────────────────────────
    STATE
@@ -102,9 +102,22 @@ async function login() {
   if (!name || !uid) return err("이름과 학번/교번을 모두 입력해주세요.");
 
   try {
-    const found = (ROSTER || []).find((u) => u.name === name && u.uid === uid);
-    if (!found) throw new Error("INVALID_CREDENTIALS");
-    ME = found;
+    const s = needSupabase();
+    const { data, error } = await s
+      .from("roster")
+      .select("uid,name,role,team_name")
+      .eq("uid", uid)
+      .eq("name", name)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("INVALID_CREDENTIALS");
+    ME = {
+      uid: data.uid,
+      name: data.name,
+      role: data.role,
+      team: data.team_name || null,
+    };
     localStorage.setItem("eventscape_me", JSON.stringify(ME));
     loginOK();
   } catch (e) {
@@ -132,9 +145,8 @@ function loginOK() {
   setupRole();
 
   loadEvents().catch(() => {
-    events = JSON.parse(JSON.stringify(DEMO_EVENTS));
-    teams = JSON.parse(JSON.stringify(DEMO_TEAMS));
-    events.forEach(addPin);
+    events = [];
+    teams = [];
     renderTeams();
     renderRank();
   });
