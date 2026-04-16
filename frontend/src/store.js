@@ -8,6 +8,9 @@ const EVENT_FILES_BUCKET = "event-files";
 const TEAM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 let realtimeInboxChannel = null;
 let realtimeInboxKey = null;
+let realtimeDataChannel = null;
+let realtimeDataKey = null;
+let dataRefreshTimer = null;
 const CURRENT_TEAM_KEY_PREFIX = "eventscape_current_team_";
 
 const isMissingTableError = (error) =>
@@ -31,6 +34,20 @@ function isRoomVisibleToMe(room, me) {
 function inboxKeyForMe(me) {
   if (!me) return "none";
   return `${String(me.uid || "")}::${String(me.role || "")}::${String(me.team || "")}`;
+}
+
+function dataKeyForMe(me) {
+  if (!me) return "none";
+  return `${String(me.uid || "")}::${String(me.role || "")}`;
+}
+
+function scheduleDataRefresh(get) {
+  if (dataRefreshTimer) window.clearTimeout(dataRefreshTimer);
+  dataRefreshTimer = window.setTimeout(() => {
+    dataRefreshTimer = null;
+    const s = get();
+    Promise.all([s.loadTeams?.(), s.loadEvents?.(), s.loadRoster?.()]).catch(() => {});
+  }, 150);
 }
 
 function loadSavedCurrentTeam(uid) {
@@ -164,6 +181,32 @@ export const useAppStore = create((set, get) => ({
     });
   },
 
+  ensureDataRealtime: async () => {
+    const { me } = get();
+    if (!sb || !me) return;
+    const key = dataKeyForMe(me);
+    if (realtimeDataChannel && realtimeDataKey === key) return;
+
+    if (realtimeDataChannel) {
+      try {
+        await sb.removeChannel(realtimeDataChannel);
+      } catch {
+        // ignore
+      }
+      realtimeDataChannel = null;
+      realtimeDataKey = null;
+    }
+
+    realtimeDataKey = key;
+    realtimeDataChannel = sb
+      .channel(`data:${key}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, () => scheduleDataRefresh(get))
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => scheduleDataRefresh(get))
+      .on("postgres_changes", { event: "*", schema: "public", table: "team_memberships" }, () => scheduleDataRefresh(get))
+      .on("postgres_changes", { event: "*", schema: "public", table: "roster" }, () => scheduleDataRefresh(get))
+      .subscribe();
+  },
+
   ensureChatInbox: async () => {
     const { me } = get();
     if (!sb || !me) return;
@@ -236,6 +279,7 @@ export const useAppStore = create((set, get) => ({
     localStorage.setItem("eventscape_me", JSON.stringify(me));
     set({ me, errorMessage: "" });
     await Promise.all([get().loadRoster(), get().loadEvents(), get().loadTeams()]);
+    await get().ensureDataRealtime();
     await get().ensureChatInbox();
   },
 
@@ -245,6 +289,7 @@ export const useAppStore = create((set, get) => ({
     const me = JSON.parse(saved);
     set({ me });
     await Promise.all([get().loadRoster(), get().loadEvents(), get().loadTeams()]);
+    await get().ensureDataRealtime();
     await get().ensureChatInbox();
   },
 
@@ -258,6 +303,15 @@ export const useAppStore = create((set, get) => ({
       }
       realtimeInboxChannel = null;
       realtimeInboxKey = null;
+    }
+    if (sb && realtimeDataChannel) {
+      try {
+        sb.removeChannel(realtimeDataChannel);
+      } catch {
+        // ignore
+      }
+      realtimeDataChannel = null;
+      realtimeDataKey = null;
     }
     set({
       me: null,
