@@ -45,7 +45,13 @@ function LoginOverlay() {
   return (
     <div id="ls">
       <div className="au login-card">
-        <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-.04em", marginBottom: 3 }}>Map<span style={{ color: "var(--blue2)" }}>IT</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 3 }}>
+          <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-.04em", lineHeight: 1, whiteSpace: "nowrap", flexShrink: 0 }}>Map<span style={{ color: "var(--blue2)" }}>IT</span></div>
+          <div style={{ fontSize: 10.5, color: "var(--t3)", fontWeight: 600, lineHeight: 1.35 }}>
+            <div>made by</div>
+            <div>zieyou52@ewha.ac.kr</div>
+          </div>
+        </div>
         <div style={{ fontSize: 11, color: "var(--t3)", fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 30 }}>MICE 교육 플랫폼</div>
         {errorMessage ? <div id="lerr" style={{ background: "rgba(255,79,107,.12)", border: "1px solid rgba(255,79,107,.3)", borderRadius: 10, padding: "9px 13px", fontSize: 12.5, color: "#ff7891", marginBottom: 13 }}>{errorMessage}</div> : null}
         <div style={{ marginBottom: 13 }}><label className="fl">이름</label><input className="fi" placeholder="예: 김철수" value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -160,6 +166,7 @@ function AppShell() {
   const closeRegister = useAppStore((s) => s.closeRegister);
   const saveProject = useAppStore((s) => s.saveProject);
   const updateProject = useAppStore((s) => s.updateProject);
+  const deleteProjectWithTeamCode = useAppStore((s) => s.deleteProjectWithTeamCode);
   const mapClickPoint = useAppStore((s) => s.mapClickPoint);
   const openChat = useAppStore((s) => s.openChat);
   const chatOpen = useAppStore((s) => s.chatOpen);
@@ -187,6 +194,8 @@ function AppShell() {
   const [isEditingProject, setIsEditingProject] = useState(false);
   const [editForm, setEditForm] = useState({ title: "", members: "", venueName: "", type: "Convention", topic: "", description: "", scale: "" });
   const [projectSaving, setProjectSaving] = useState(false);
+  const [projectDeleteCode, setProjectDeleteCode] = useState("");
+  const [projectDeleting, setProjectDeleting] = useState(false);
   const [teamInfoModal, setTeamInfoModal] = useState(null);
   const pdfRef = useRef(null);
 
@@ -542,7 +551,12 @@ function AppShell() {
       scale: currentEvent.scale === "미정" ? "" : currentEvent.scale || "",
     });
     setIsEditingProject(false);
+    setProjectDeleteCode("");
   }, [currentEvent?.id]);
+
+  useEffect(() => {
+    if (!isEditingProject) setProjectDeleteCode("");
+  }, [isEditingProject]);
 
   useEffect(() => {
     if (!me?.uid) {
@@ -706,11 +720,17 @@ function AppShell() {
         ) : null}
         <aside className="sidebar" id="sl">
           <div style={{ padding: "18px 16px 13px", borderBottom: "1px solid var(--bd)", flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 13 }}>
-              <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>🌍</div>
-              <span style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-.03em", color: "var(--t1)" }}>
-                Map<span style={{ color: "var(--blue2)" }}>IT</span>
-              </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 13, flexWrap: "wrap" }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>🌍</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: "1 1 auto" }}>
+                <span style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-.03em", color: "var(--t1)", lineHeight: 1.15, whiteSpace: "nowrap", flexShrink: 0 }}>
+                  Map<span style={{ color: "var(--blue2)" }}>IT</span>
+                </span>
+                <div style={{ fontSize: 9.5, color: "var(--t3)", fontWeight: 600, lineHeight: 1.3 }}>
+                  <div>made by</div>
+                  <div>zieyou52@ewha.ac.kr</div>
+                </div>
+              </div>
             </div>
             <div className="card" style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px" }}>
               <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,var(--blue),#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center" }}>{me.role === "professor" ? "👨‍🏫" : "🎓"}</div>
@@ -1008,6 +1028,50 @@ function AppShell() {
                   <button type="button" className="btn bb" disabled={projectSaving} onClick={() => submitProjectEdit().catch(() => {})}>
                     {projectSaving ? "저장 중..." : "수정 저장"}
                   </button>
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--bd)" }}>
+                    <label className="fl">팀 고유 코드 (삭제 시 필요)</label>
+                    <input
+                      className="fi mono"
+                      placeholder="팀 등록 시 발급된 코드"
+                      value={projectDeleteCode}
+                      onChange={(e) => setProjectDeleteCode(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      disabled={projectDeleting || projectSaving}
+                      onClick={async () => {
+                        if (!currentEvent) return;
+                        setProjectDeleting(true);
+                        try {
+                          const ok = await deleteProjectWithTeamCode(currentEvent.id, projectDeleteCode);
+                          if (ok) {
+                            setProjectDeleteCode("");
+                            setIsEditingProject(false);
+                          }
+                        } catch {
+                          /* store에서 alert */
+                        } finally {
+                          setProjectDeleting(false);
+                        }
+                      }}
+                      style={{
+                        marginTop: 10,
+                        width: "100%",
+                        padding: "11px 12px",
+                        borderRadius: 12,
+                        border: "1px solid rgba(255,79,107,.5)",
+                        background: "rgba(255,79,107,.14)",
+                        color: "#ff5c7a",
+                        fontWeight: 800,
+                        fontSize: 13,
+                        cursor: projectDeleting || projectSaving ? "not-allowed" : "pointer",
+                        opacity: projectDeleting || projectSaving ? 0.65 : 1,
+                      }}
+                    >
+                      {projectDeleting ? "삭제 중…" : "기획 삭제하기"}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1120,9 +1184,9 @@ function AppShell() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 16 }}>
                         {item.type === "project_created"
-                          ? "🆕🗺️"
+                          ? "🆕"
                           : item.type === "project_updated"
-                            ? "✏️🗺️"
+                            ? "✏️"
                             : item.type === "professor_feedback"
                           ? "👨‍🏫📝"
                           : item.type === "professor_like"

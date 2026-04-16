@@ -595,6 +595,43 @@ export const useAppStore = create((set, get) => ({
     }
   },
 
+  deleteProjectWithTeamCode: async (eventId, inviteCodeInput) => {
+    const { events, teams, currentEvent, detailOpen } = get();
+    const target = events.find((e) => e.id === eventId);
+    if (!target) {
+      window.alert("기획을 찾을 수 없습니다.");
+      return false;
+    }
+    const input = String(inviteCodeInput || "").trim().toUpperCase();
+    if (!input) {
+      window.alert("삭제하려면 해당 프로젝트 팀의 고유 코드를 입력해 주세요.");
+      return false;
+    }
+    const team = teams.find((t) => t.name === target.team_name);
+    const expected = String(team?.invite_code || "").trim().toUpperCase();
+    if (!team || !expected || expected !== input) {
+      window.alert("팀 고유 코드가 일치하지 않습니다. 팀 등록 시 발급된 코드를 확인해 주세요.");
+      return false;
+    }
+    if (!sb) {
+      window.alert("Supabase 연결이 필요합니다.");
+      return false;
+    }
+    const { error } = await sb.from("events").delete().eq("id", eventId);
+    if (error) {
+      window.alert(`기획 삭제 실패: ${error.message}`);
+      throw error;
+    }
+    const cleared = currentEvent?.id === eventId;
+    set({
+      events: events.filter((e) => e.id !== eventId),
+      currentEvent: cleared ? null : currentEvent,
+      detailOpen: cleared ? false : detailOpen,
+    });
+    window.alert("기획이 삭제되었습니다.");
+    return true;
+  },
+
   saveProject: async (payload) => {
     const { pdfFiles, ...rest } = payload;
     const { events, teams } = get();

@@ -143,6 +143,8 @@ drop policy if exists "events_write_all" on public.events;
 create policy "events_write_all" on public.events for insert with check (true);
 drop policy if exists "events_update_all" on public.events;
 create policy "events_update_all" on public.events for update using (true) with check (true);
+drop policy if exists "events_delete_all" on public.events;
+create policy "events_delete_all" on public.events for delete using (true);
 
 drop policy if exists "messages_read_all" on public.messages;
 create policy "messages_read_all" on public.messages for select using (true);
