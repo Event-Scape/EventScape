@@ -25,5 +25,5 @@ window.__ENV.SUPABASE_ANON_KEY = \`${esc(env.SUPABASE_ANON_KEY)}\`;
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, content, "utf8");
 
-console.log(`[EventScape] wrote ${outPath}`);
+console.log(`[MapIT] wrote ${outPath}`);
 

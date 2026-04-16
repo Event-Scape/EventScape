@@ -233,6 +233,6 @@ app.use(express.static(frontendDir));
 const port = Number(process.env.PORT ?? 5173);
 app.listen(port, () => {
   // eslint-disable-next-line no-console
-  console.log(`[EventScape] http://localhost:${port}`);
+  console.log(`[MapIT] http://localhost:${port}`);
 });
 
