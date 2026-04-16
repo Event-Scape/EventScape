@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { MB_TOK } from "./config";
-import { ROSTER, TC } from "./demoData";
+import { TC } from "./demoData";
 import { useAppStore } from "./store";
 
 const EVENT_TYPE_OPTIONS = ["Convention", "Incentive", "Meeting", "Exhibition"];
@@ -116,6 +116,7 @@ function MapView() {
 
 function AppShell() {
   const me = useAppStore((s) => s.me);
+  const roster = useAppStore((s) => s.roster);
   const events = useAppStore((s) => s.events);
   const teams = useAppStore((s) => s.teams);
   const myTeams = useAppStore((s) => s.myTeams);
@@ -279,8 +280,8 @@ function AppShell() {
     return myTeams.some((t) => unreadByRoom?.[`prof_team_${t.name}`]);
   }, [me?.role, myTeams, unreadByRoom]);
   const notificationItems = useMemo(() => {
-    const roleByUid = new Map(ROSTER.map((u) => [u.uid, u.role]));
-    const nameByUid = new Map(ROSTER.map((u) => [u.uid, u.name]));
+    const roleByUid = new Map(roster.map((u) => [u.uid, u.role]));
+    const nameByUid = new Map(roster.map((u) => [u.uid, u.name]));
     return myProjects.flatMap((ev) => {
       const seen = seenProjectStats[ev.id] || { likeUids: [], feedbackKeys: [] };
       const seenLikeUids = new Set(seen.likeUids || []);
@@ -326,7 +327,7 @@ function AppShell() {
 
       return eventItems;
     });
-  }, [myProjects, me?.name, me?.uid, seenProjectStats]);
+  }, [myProjects, me?.name, me?.uid, roster, seenProjectStats]);
   const notificationCount = notificationItems.length;
   const myFeedbacks = useMemo(
     () =>

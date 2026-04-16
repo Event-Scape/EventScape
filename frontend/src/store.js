@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createClient } from "@supabase/supabase-js";
 import { MB_TOK, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
-import { ROSTER, TC_LIST } from "./demoData";
+import { TC_LIST } from "./demoData";
 
 const sb = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const EVENT_FILES_BUCKET = "event-files";
@@ -84,6 +84,7 @@ async function uploadEventPdfs(pdfFiles) {
 
 export const useAppStore = create((set, get) => ({
   me: null,
+  roster: [],
   events: [],
   teams: [],
   myTeams: [],
@@ -140,6 +141,29 @@ export const useAppStore = create((set, get) => ({
     }),
   closeChat: async () => set({ chatOpen: false }),
 
+  loadRoster: async () => {
+    if (!sb) return;
+    const { data, error } = await sb.from("roster").select("uid,name,role,team_name").order("uid", { ascending: true });
+    if (error) {
+      if (isMissingTableError(error)) {
+        set({
+          roster: [],
+          errorMessage: "Supabase에 `roster` 테이블이 없습니다. 최신 `supabase/schema.sql`을 실행해 주세요.",
+        });
+        return;
+      }
+      throw error;
+    }
+    set({
+      roster: (data || []).map((r) => ({
+        uid: r.uid,
+        name: r.name,
+        role: r.role,
+        team: r.team_name || null,
+      })),
+    });
+  },
+
   ensureChatInbox: async () => {
     const { me } = get();
     if (!sb || !me) return;
@@ -191,11 +215,27 @@ export const useAppStore = create((set, get) => ({
   },
 
   login: async (name, uid) => {
-    const found = ROSTER.find((u) => u.name === name.trim() && u.uid === uid.trim());
-    if (!found) throw new Error("INVALID_CREDENTIALS");
-    localStorage.setItem("eventscape_me", JSON.stringify(found));
-    set({ me: found, errorMessage: "" });
-    await Promise.all([get().loadEvents(), get().loadTeams()]);
+    if (!sb) throw new Error("SUPABASE_CONFIG_MISSING");
+    const nm = name.trim();
+    const id = uid.trim();
+    const { data, error } = await sb
+      .from("roster")
+      .select("uid,name,role,team_name")
+      .eq("uid", id)
+      .eq("name", nm)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("INVALID_CREDENTIALS");
+    const me = {
+      uid: data.uid,
+      name: data.name,
+      role: data.role,
+      team: data.team_name || null,
+    };
+    localStorage.setItem("eventscape_me", JSON.stringify(me));
+    set({ me, errorMessage: "" });
+    await Promise.all([get().loadRoster(), get().loadEvents(), get().loadTeams()]);
     await get().ensureChatInbox();
   },
 
@@ -204,7 +244,7 @@ export const useAppStore = create((set, get) => ({
     if (!saved) return;
     const me = JSON.parse(saved);
     set({ me });
-    await Promise.all([get().loadEvents(), get().loadTeams()]);
+    await Promise.all([get().loadRoster(), get().loadEvents(), get().loadTeams()]);
     await get().ensureChatInbox();
   },
 
