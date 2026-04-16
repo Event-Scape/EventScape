@@ -150,3 +150,31 @@ drop policy if exists "messages_read_all" on public.messages;
 create policy "messages_read_all" on public.messages for select using (true);
 drop policy if exists "messages_write_all" on public.messages;
 create policy "messages_write_all" on public.messages for insert with check (true);
+
+-- Realtime: 클라이언트 postgres_changes 수신을 위해 publication에 테이블 등록
+-- (이미 등록된 경우 duplicate_object 오류는 무시하면 됩니다.)
+do $$
+begin
+  alter publication supabase_realtime add table public.events;
+exception when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter publication supabase_realtime add table public.teams;
+exception when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter publication supabase_realtime add table public.team_memberships;
+exception when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter publication supabase_realtime add table public.roster;
+exception when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter publication supabase_realtime add table public.messages;
+exception when duplicate_object then null;
+end $$;

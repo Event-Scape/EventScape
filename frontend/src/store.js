@@ -11,7 +11,39 @@ let realtimeInboxKey = null;
 let realtimeDataChannel = null;
 let realtimeDataKey = null;
 let dataRefreshTimer = null;
+let dataPollInterval = null;
+let visibilityCleanup = null;
 const CURRENT_TEAM_KEY_PREFIX = "eventscape_current_team_";
+
+function startDataSyncFallback(get) {
+  if (typeof window === "undefined" || !sb) return;
+  stopDataSyncFallback();
+  dataPollInterval = window.setInterval(() => {
+    const { me } = get();
+    if (!me) return;
+    void Promise.all([get().loadEvents(), get().loadTeams()]);
+  }, 12000);
+  const onVis = () => {
+    if (document.visibilityState !== "visible") return;
+    const { me } = get();
+    if (!me) return;
+    void Promise.all([get().loadEvents(), get().loadTeams()]);
+  };
+  document.addEventListener("visibilitychange", onVis);
+  visibilityCleanup = () => document.removeEventListener("visibilitychange", onVis);
+}
+
+function stopDataSyncFallback() {
+  if (typeof window === "undefined") return;
+  if (dataPollInterval != null) {
+    window.clearInterval(dataPollInterval);
+    dataPollInterval = null;
+  }
+  if (visibilityCleanup) {
+    visibilityCleanup();
+    visibilityCleanup = null;
+  }
+}
 
 const isMissingTableError = (error) =>
   !!error && (error.code === "PGRST205" || error.code === "42P01" || error.status === 404);
@@ -22,13 +54,18 @@ function messageKey(m) {
   return `tmp:${String(m.room || "")}|${String(m.sender_id || "")}|${String(m.sender_name || "")}|${String(m.content || "")}|${String(m.created_at || "")}`;
 }
 
-function isRoomVisibleToMe(room, me) {
+function isRoomVisibleToMe(room, me, myTeams) {
   if (!room || !me) return false;
   if (room === "global_chat") return true;
-  if (String(me.role) === "professor") return room.startsWith("prof_team_");
-  const team = String(me.team || "").trim();
-  if (!team) return false;
-  return room === `prof_team_${team}`;
+  const teams = Array.isArray(myTeams) ? myTeams : [];
+  if (String(me.role) === "professor") {
+    return room.startsWith("prof_team_") || room.startsWith("team_") || room === "prof_chat";
+  }
+  const uid = String(me.uid || "").trim();
+  if (uid && room === `prof_${uid}`) return true;
+  if (room.startsWith("prof_team_") && teams.some((t) => room === `prof_team_${t.name}`)) return true;
+  if (room.startsWith("team_") && teams.some((t) => room === `team_${t.name}`)) return true;
+  return false;
 }
 
 function inboxKeyForMe(me) {
@@ -204,7 +241,9 @@ export const useAppStore = create((set, get) => ({
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => scheduleDataRefresh(get))
       .on("postgres_changes", { event: "*", schema: "public", table: "team_memberships" }, () => scheduleDataRefresh(get))
       .on("postgres_changes", { event: "*", schema: "public", table: "roster" }, () => scheduleDataRefresh(get))
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") scheduleDataRefresh(get);
+      });
   },
 
   ensureChatInbox: async () => {
@@ -233,11 +272,7 @@ export const useAppStore = create((set, get) => ({
         const { myTeams } = get();
         if (!current) return;
         const room = String(msg.room || "");
-        const visible =
-          room === "global_chat" ||
-          (String(current.role) === "professor"
-            ? room.startsWith("prof_team_")
-            : room.startsWith("prof_team_") && myTeams.some((t) => room === `prof_team_${t.name}`));
+        const visible = isRoomVisibleToMe(room, current, myTeams);
         if (!visible) return;
 
         set((s) => {
@@ -281,6 +316,7 @@ export const useAppStore = create((set, get) => ({
     await Promise.all([get().loadRoster(), get().loadEvents(), get().loadTeams()]);
     await get().ensureDataRealtime();
     await get().ensureChatInbox();
+    startDataSyncFallback(get);
   },
 
   restoreSession: async () => {
@@ -291,9 +327,11 @@ export const useAppStore = create((set, get) => ({
     await Promise.all([get().loadRoster(), get().loadEvents(), get().loadTeams()]);
     await get().ensureDataRealtime();
     await get().ensureChatInbox();
+    startDataSyncFallback(get);
   },
 
   logout: () => {
+    stopDataSyncFallback();
     localStorage.removeItem("eventscape_me");
     if (sb && realtimeInboxChannel) {
       try {
@@ -347,7 +385,13 @@ export const useAppStore = create((set, get) => ({
       liked: me ? (e.liked_by || []).includes(me.uid) : false,
       votes: (e.liked_by || []).length,
     }));
-    set({ events });
+    set((s) => {
+      const sel = s.currentEvent?.id;
+      if (!sel) return { events };
+      const fresh = events.find((e) => e.id === sel);
+      if (fresh) return { events, currentEvent: fresh };
+      return { events, currentEvent: null, detailOpen: false };
+    });
   },
 
   loadTeams: async () => {
@@ -413,12 +457,19 @@ export const useAppStore = create((set, get) => ({
     const primaryTeam = myTeams[0]?.name || "";
     const savedTeam = me?.uid ? loadSavedCurrentTeam(me.uid) : "";
     const initialCurrentTeam = savedTeam && myTeams.some((t) => t.name === savedTeam) ? savedTeam : primaryTeam;
-    set((s) => ({
-      teams,
-      myTeams,
-      currentTeam: s.me?.role === "student" ? initialCurrentTeam : "",
-      me: s.me ? { ...s.me, team: s.me?.role === "student" ? initialCurrentTeam : primaryTeam } : s.me,
-    }));
+    set((s) => {
+      let nextStudentTeam = initialCurrentTeam;
+      if (s.me?.role === "student") {
+        const prev = String(s.currentTeam || "").trim();
+        if (prev && myTeams.some((t) => t.name === prev)) nextStudentTeam = prev;
+      }
+      return {
+        teams,
+        myTeams,
+        currentTeam: s.me?.role === "student" ? nextStudentTeam : "",
+        me: s.me ? { ...s.me, team: s.me?.role === "student" ? nextStudentTeam : primaryTeam } : s.me,
+      };
+    });
   },
 
   addTeam: async () => {
