@@ -6,6 +6,23 @@ import { useAppStore } from "./store";
 
 const EVENT_TYPE_OPTIONS = ["Convention", "Incentive", "Meeting", "Exhibition"];
 const FEEDBACK_KEY_SEP = "||";
+const EVENT_SIG_SEP = "||";
+
+function eventSig(ev) {
+  if (!ev) return "";
+  // Keep it stable for "project updated" notifications.
+  return [
+    String(ev.title || ""),
+    String(ev.team_name || ""),
+    String(ev.members || ""),
+    String(ev.loc || ""),
+    String(ev.type || ""),
+    String(ev.topic || ""),
+    String(ev.description || ""),
+    String(ev.scale || ""),
+    JSON.stringify(ev.files || []),
+  ].join(EVENT_SIG_SEP);
+}
 
 const EMPTY_REGISTER_FORM = {
   title: "",
@@ -166,6 +183,7 @@ function AppShell() {
   const [allTeamsOpen, setAllTeamsOpen] = useState(false);
   const [profTeamChatsOpen, setProfTeamChatsOpen] = useState(true);
   const [seenProjectStats, setSeenProjectStats] = useState({});
+  const [seenStatsMissing, setSeenStatsMissing] = useState(false);
   const [isEditingProject, setIsEditingProject] = useState(false);
   const [editForm, setEditForm] = useState({ title: "", members: "", venueName: "", type: "Convention", topic: "", description: "", scale: "" });
   const [projectSaving, setProjectSaving] = useState(false);
@@ -283,10 +301,58 @@ function AppShell() {
     const roleByUid = new Map(roster.map((u) => [u.uid, u.role]));
     const nameByUid = new Map(roster.map((u) => [u.uid, u.name]));
     return myProjects.flatMap((ev) => {
-      const seen = seenProjectStats[ev.id] || { likeUids: [], feedbackKeys: [] };
+      const seen = seenProjectStats[ev.id] || { likeUids: [], feedbackKeys: [], seenCreatedAt: null, seenSig: null };
       const seenLikeUids = new Set(seen.likeUids || []);
       const seenFeedbackKeys = new Set(seen.feedbackKeys || []);
+      const seenCreatedAt = seen.seenCreatedAt || null;
+      const seenSig = seen.seenSig || null;
       const eventItems = [];
+
+      // Professor: notify on new project registrations / updates
+      if (me?.role === "professor") {
+        const createdAt = ev.created_at || null;
+        const sig = eventSig(ev);
+        if (createdAt && !seenCreatedAt) {
+          eventItems.push({
+            id: `${ev.id}-project-created-${createdAt}`,
+            type: "project_created",
+            eventId: ev.id,
+            eventTitle: ev.title,
+            teamName: ev.team_name,
+            actorName: ev.team_name,
+            content: "새로운 기획이 등록되었습니다.",
+            createdAt,
+            sig,
+          });
+        } else if (createdAt && seenCreatedAt && String(seenCreatedAt) !== String(createdAt)) {
+          // if created_at changed for some reason, treat as new
+          eventItems.push({
+            id: `${ev.id}-project-created-${createdAt}`,
+            type: "project_created",
+            eventId: ev.id,
+            eventTitle: ev.title,
+            teamName: ev.team_name,
+            actorName: ev.team_name,
+            content: "새로운 기획이 등록되었습니다.",
+            createdAt,
+            sig,
+          });
+        }
+
+        if (seenSig && sig && seenSig !== sig) {
+          eventItems.push({
+            id: `${ev.id}-project-updated-${sig}`,
+            type: "project_updated",
+            eventId: ev.id,
+            eventTitle: ev.title,
+            teamName: ev.team_name,
+            actorName: ev.team_name,
+            content: "기획이 수정되었습니다.",
+            createdAt,
+            sig,
+          });
+        }
+      }
 
       (ev.liked_by || []).forEach((uid) => {
         if (!uid || uid === me?.uid || seenLikeUids.has(uid)) return;
@@ -481,25 +547,58 @@ function AppShell() {
   useEffect(() => {
     if (!me?.uid) {
       setSeenProjectStats({});
+      setSeenStatsMissing(false);
       return;
     }
     const key = `eventscape_seen_project_stats_${me.uid}`;
     try {
-      const saved = JSON.parse(localStorage.getItem(key) || "{}");
+      const raw = localStorage.getItem(key);
+      setSeenStatsMissing(raw === null);
+      const saved = JSON.parse(raw || "{}");
       setSeenProjectStats(saved && typeof saved === "object" ? saved : {});
     } catch {
       setSeenProjectStats({});
+      setSeenStatsMissing(true);
     }
   }, [me?.uid]);
+
+  // Avoid "first login" notification spam for professors:
+  // if there was no saved seen-stats yet, initialize baseline from current events.
+  useEffect(() => {
+    if (!me?.uid) return;
+    if (me?.role !== "professor") return;
+    if (!seenStatsMissing) return;
+    if (!Array.isArray(events) || events.length === 0) return;
+
+    const key = `eventscape_seen_project_stats_${me.uid}`;
+    const baseline = {};
+    events.forEach((ev) => {
+      baseline[ev.id] = {
+        likeUids: [],
+        feedbackKeys: [],
+        seenCreatedAt: ev.created_at || null,
+        seenSig: eventSig(ev),
+      };
+    });
+    try {
+      localStorage.setItem(key, JSON.stringify(baseline));
+    } catch {
+      // ignore
+    }
+    setSeenProjectStats(baseline);
+    setSeenStatsMissing(false);
+  }, [events, me?.role, me?.uid, seenStatsMissing]);
 
   const markNotificationAsRead = (item) => {
     if (!me?.uid || !item?.eventId) return;
     const key = `eventscape_seen_project_stats_${me.uid}`;
     setSeenProjectStats((prev) => {
-      const prevEvent = prev[item.eventId] || { likeUids: [], feedbackKeys: [] };
+      const prevEvent = prev[item.eventId] || { likeUids: [], feedbackKeys: [], seenCreatedAt: null, seenSig: null };
       const nextEvent = {
         likeUids: [...(prevEvent.likeUids || [])],
         feedbackKeys: [...(prevEvent.feedbackKeys || [])],
+        seenCreatedAt: prevEvent.seenCreatedAt || null,
+        seenSig: prevEvent.seenSig || null,
       };
 
       if (item.type === "professor_like" || item.type === "student_like") {
@@ -509,6 +608,15 @@ function AppShell() {
 
       if ((item.type === "professor_feedback" || item.type === "student_feedback") && item.feedbackKey) {
         if (!nextEvent.feedbackKeys.includes(item.feedbackKey)) nextEvent.feedbackKeys.push(item.feedbackKey);
+      }
+
+      if (item.type === "project_created") {
+        nextEvent.seenCreatedAt = item.createdAt || nextEvent.seenCreatedAt;
+        nextEvent.seenSig = item.sig || nextEvent.seenSig;
+      }
+
+      if (item.type === "project_updated") {
+        nextEvent.seenSig = item.sig || nextEvent.seenSig;
       }
 
       const next = { ...prev, [item.eventId]: nextEvent };
@@ -1011,7 +1119,11 @@ function AppShell() {
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 16 }}>
-                        {item.type === "professor_feedback"
+                        {item.type === "project_created"
+                          ? "🆕🗺️"
+                          : item.type === "project_updated"
+                            ? "✏️🗺️"
+                            : item.type === "professor_feedback"
                           ? "👨‍🏫📝"
                           : item.type === "professor_like"
                             ? "👨‍🏫❤️"
@@ -1020,7 +1132,11 @@ function AppShell() {
                               : "🎓❤️"}
                       </span>
                       <span style={{ fontSize: 12, fontWeight: 700, color: "var(--t1)" }}>
-                        {item.type === "professor_feedback"
+                        {item.type === "project_created"
+                          ? "새 기획 등록"
+                          : item.type === "project_updated"
+                            ? "기획 수정"
+                            : item.type === "professor_feedback"
                           ? "교수님 피드백"
                           : item.type === "professor_like"
                             ? "교수님 좋아요"
